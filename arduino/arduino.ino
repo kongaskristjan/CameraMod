@@ -14,6 +14,7 @@ void setup() {
   Serial.begin(9600);
 
   // Camera is on by default
+  Serial.println("Camera is initially on");
 }
 
 void loop() {
