@@ -1,4 +1,26 @@
 
+enum class Mode { normal, test };
+
+const Mode mode = Mode::test;
+
+void loopForever() {
+  Serial.println("Loop forever");
+  if(mode == Mode::normal) {
+    while(true) {
+      delay(1000);
+    }
+  } else if(mode == Mode::test) {
+    // Switch camera off
+    switchCamera(false);
+    Serial.println("Resetting soon");
+    delay(12000);
+
+    // Reset Arduino
+    void(* resetFunc) (void) = 0;
+    resetFunc();
+  }
+}
+
 void switchCamera(bool state) {
   if(state) {
     pinMode(A5, INPUT);
@@ -14,7 +36,12 @@ void setup() {
   Serial.begin(9600);
 
   // Camera is on by default
-  Serial.println("Camera is initially on");
+  if(mode == Mode::normal) {
+    Serial.println("Initializing Arduino (normal mode)");
+  } else if(mode == Mode::test) {
+    Serial.println("Initializing Arduino (test mode)");
+  }
+  switchCamera(true);
 }
 
 void loop() {
@@ -26,7 +53,7 @@ void loop() {
     Serial.println(sensorValue);
     
     switchCamera(false);
-    delay(18000);
+    delay(12000);
     switchCamera(true);
   } else {
     Serial.println("Led detected +++ ");
@@ -36,7 +63,6 @@ void loop() {
       Serial.println("WARNING: Something is probably wrong, sensorValue should be >= 200 (most likely there is no 5V from main usb power)");
     }
 
-    Serial.println("Loop forever");
-    while(true) { delay(1000); }
+    loopForever();
   }
 }
