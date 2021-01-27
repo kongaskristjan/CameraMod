@@ -1,36 +1,63 @@
 
-enum class Mode { operate, testHardware }; // WARNING: CHANGING VALUES CORRUPT LOGS
-const Mode mode = Mode::testHardware;
+enum class Mode { normal, withReset };
+const Mode mode = Mode::withReset;
 
-constexpr int delayLength = 100; // ms
-constexpr int totalIters = 10 /* seconds */ * (1000 /* ms per s */ / delayLength);
+constexpr int delayLength = 50; // ms
+constexpr int totalIters = 15 /* seconds */ * (1000 /* ms per s */ / delayLength);
 
 const int voltagePin = A5, cameraPin = A3;
 
 short sensorValues[totalIters];
 int iter = 0;
 
-// Sensor value ranges: 0-1023 (0-5V)
+// Sensor value range: 0-1023 (0-5V)
+
+void reset() {
+  Serial.println("Resetting camera:");
+  Serial.println("Switching camera off");
+  digitalWrite(cameraPin, HIGH);
+  delay(10000);
+  Serial.println("Switching camera on");
+  digitalWrite(cameraPin, LOW);
+
+  iter = 0;
+}
+
+bool detectCameraFailure() {
+  return true;
+}
 
 void setup() {
   Serial.begin(9600);
-  if(mode == Mode::operate) Serial.println("Starting arduino: operate normally");
-  if(mode == Mode::testHardware) Serial.println("Starting arduino: testing hardware");
+  Serial.println("");
+  if(mode == Mode::normal) Serial.println("Starting arduino: operate normally");
+  if(mode == Mode::withReset) Serial.println("Starting arduino: operate normally, but reset (for testing)");
+
   pinMode(cameraPin, OUTPUT);
+  
+  if(mode == Mode::withReset) {
+    reset();
+  }
 }
 
 void loop() {
-  int sensorValue = analogRead(voltagePin);
-  Serial.println(sensorValue);
   if(iter < totalIters) {
+    int sensorValue = analogRead(voltagePin);
+    Serial.println(sensorValue);
     sensorValues[iter] = sensorValue;
   }
 
-  // Hardware testing mode
-  if(mode == Mode::testHardware && iter == totalIters) {
-    digitalWrite(cameraPin, HIGH);
+  if(iter == totalIters) {
+    bool cameraFailed = detectCameraFailure();
+    if(cameraFailed) {
+      reset();
+    } else {
+      Serial.println("Camera successful: Looping forever");
+      // Loop forever
+      while(true) delay(10000);
+    }
+  } else {
+    delay(delayLength);
+    ++iter;
   }
-
-  delay(delayLength);
-  ++iter;
 }
