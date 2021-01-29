@@ -5,6 +5,8 @@ const Mode mode = Mode::withReset;
 constexpr int delayLength = 50; // ms
 constexpr int totalIters = 15 /* seconds */ * (1000 /* ms per s */ / delayLength);
 constexpr int stabIters1 = 5, stabIters2 = 2;
+constexpr int minMeasurementTimeDiff = 15;
+constexpr int minDelta = 14;
 
 const int voltagePin = A5, cameraPin = A3;
 
@@ -44,9 +46,9 @@ Step findMaxStep(int startIter, int stabIters) {
 bool detectCameraSuccess() {
   Step s1 = findMaxStep(0, stabIters1);
   Serial.println(String("1. step: iter: ") + s1.iter + "\t delta: " + s1.delta);
-  Step s2 = findMaxStep(s1.iter + stabIters1, stabIters2);
+  Step s2 = findMaxStep(s1.iter + minMeasurementTimeDiff, stabIters2);
   Serial.println(String("2. step: iter: ") + s2.iter + "\t delta: " + s2.delta);
-  if(s2.delta < -20) {
+  if(s2.delta < -minDelta) {
     Serial.println("Camera success");
     return true;
   }
