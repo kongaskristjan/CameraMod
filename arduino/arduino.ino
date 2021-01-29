@@ -1,6 +1,6 @@
 
 enum class Mode { normal, withReset };
-const Mode mode = Mode::withReset;
+const Mode mode = Mode::normal;
 
 constexpr int delayLength = 50; // ms
 constexpr int totalIters = 15 /* seconds */ * (1000 /* ms per s */ / delayLength);
