@@ -1,0 +1,3 @@
+(fp_lib_table
+  (lib (name Seeeduino)(type KiCad)(uri ${KIPRJMOD}/Seeeduino)(options "")(descr ""))
+)
