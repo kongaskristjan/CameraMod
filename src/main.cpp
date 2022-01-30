@@ -10,7 +10,7 @@ constexpr int sleepLength = 50; // ms
 constexpr int totalIters = 15 /* seconds */ * (1000 /* ms per s */ / sleepLength);
 constexpr int stabIters1 = 5, stabIters2 = 2;
 constexpr int minMeasurementTimeDiff = 15;
-constexpr int minDelta = 14;
+constexpr int minDelta = 56;
 
 const int adcPin = 28, cameraPin = 0; // Voltage pin = A2=D2=P28, cameraPin = D6=P0
 const int adcOffset = 26;
