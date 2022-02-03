@@ -23,8 +23,6 @@ const int adcPin = 28, cameraPin = 0; // Voltage pin = A2=D2, cameraPin = D6
 const int pixelPwrPin = 11, pixelPin = 12;
 const int adcOffset = 26;
 
-
-
 class NeoPixel {
 private:
     pio_hw_t *pio;
@@ -32,36 +30,44 @@ private:
 
 public:
     explicit NeoPixel(pio_hw_t *pio): pio(pio) {
-        gpio_set_dir(pixelPwrPin, GPIO_OUT);
-        gpio_put(pixelPwrPin, true);
         offset = pio_add_program(pio, &ws2812_program);
         ws2812_program_init(pio, 0, offset, pixelPin, 800000, true);
     }
 
     ~NeoPixel() {
-        gpio_put(pixelPwrPin, false);
+        write(0, 0, 0);
         pio_remove_program(pio, &ws2812_program, offset);
     }
 
     void write(uint8_t r, uint8_t g, uint8_t b) {
         uint32_t grb_ = ((uint32_t) r << 16) | ((uint32_t) g << 24) | ((uint32_t) b << 8);
         pio_sm_put_blocking(pio0, 0, grb_);
-    }
-};
-
-class Indicator {
-private:
-    NeoPixel neo;
-public:
-    Indicator(pio_hw_t *pio): neo(pio) {
+        sleep_ms(1); // 100 us is enough
     }
 
-    void clear() {
-        neo.write(0, 0, 0);
+    void show_ms(uint32_t ms, uint8_t r, uint8_t g, uint8_t b) {
+        write(r, g, b);
+        sleep_ms(ms);
+        write(0, 0, 0);
     }
 
-    void fail() {
-        neo.write(20, 0, 0);
+    void blink_number(uint32_t number, uint8_t brightness) {
+        bool showing = false;
+        printf("Showing %d\n", number);
+        sleep_ms(500);
+        for(uint32_t bit = 1u << 31; bit; bit >>= 1) {
+            if(number & bit)
+                showing = true;
+
+            if(showing) {
+                if(number & bit)
+                    show_ms(1000, 0, brightness, 0);
+                else
+                    show_ms(1000, brightness, 0, 0);
+                show_ms(200, 0, 0, 0);
+            }
+        }
+        sleep_ms(500);
     }
 };
 
@@ -126,6 +132,10 @@ bool isCameraRunning() {
 
 void init() {
     stdio_init_all();
+
+    gpio_init(pixelPwrPin);
+    gpio_set_dir(pixelPwrPin, GPIO_OUT);
+    gpio_put(pixelPwrPin, true);
     sleep_ms(1200);
     printf("\n\nStarting microcontroller\n");
 
@@ -134,7 +144,6 @@ void init() {
     gpio_init(cameraPin);
     gpio_set_dir(cameraPin, GPIO_OUT);
     gpio_put(cameraPin, true);
-    gpio_init(pixelPwrPin);
 }
 
 bool experimentCameraRunning() {
@@ -152,9 +161,27 @@ void loop() {
     }
 }
 
+void printSuccessesFails() {
+    Counts counts;
+    counts.read();
+    printf("successes: %d  fails: %d\n", counts.successes, counts.fails);
+}
+
+void displaySuccessesFails(NeoPixel neo) {
+    Counts counts;
+    counts.read();
+
+    int brightness = 8;
+    neo.show_ms(2000, 0, 0, brightness);
+    neo.blink_number(counts.successes, brightness);
+    neo.show_ms(2000, 0, 0, brightness);
+    neo.blink_number(counts.fails, brightness);
+    neo.show_ms(2000, 0, 0, brightness);
+}
+
 int main() {
     init();
-    Indicator indicator(pio0);
+    NeoPixel neo(pio0);
 
     if(resetCounts) {
         Counts counts;
@@ -165,20 +192,24 @@ int main() {
 
     Counts counts;
     counts.read();
-    printf("successes: %d  fails: %d\n", counts.successes, counts.fails);
+    printSuccessesFails();
 
     while(! experimentCameraRunning()) {
-        printf("Camera start failed: resetting\n");
-        indicator.fail();
-        reset();
-        indicator.clear();
         ++counts.fails;
         counts.write();
+        printf("Camera start failed: resetting\n");
+        printSuccessesFails();
+
+        neo.write(20, 0, 0);
+        reset();
+        neo.write(0, 0, 0);
     }
 
-    printf("Camera start successful: looping forever\n");
     ++counts.successes;
     counts.write();
+    printf("Camera start successful: looping forever\n");
+    printSuccessesFails();
+    displaySuccessesFails(neo);
 
     loop();
     return 0;
