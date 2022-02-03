@@ -9,7 +9,7 @@
 #include "ws2812.pio.h"
 #include "hardware/flash.h"
 
-constexpr bool resetCounts = true;
+constexpr bool resetCounts = false;
 
 constexpr int sleepLength = 50; // ms
 constexpr int totalIters = 15 /* seconds */ * (1000 /* ms per s */ / sleepLength);
