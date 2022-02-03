@@ -1,13 +1,15 @@
 
-#include <iostream>
+#include <cstdio> // We're running short on memory, use printf instead of cout (program must be loaded to ram to enable flash)
 #include <vector>
 #include "pico/stdlib.h"
-#include "pico/binary_info.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
 #include "hardware/pio.h"
 #include "hardware/clocks.h"
 #include "ws2812.pio.h"
+#include "hardware/flash.h"
+
+constexpr bool resetCounts = true;
 
 constexpr int sleepLength = 50; // ms
 constexpr int totalIters = 15 /* seconds */ * (1000 /* ms per s */ / sleepLength);
@@ -15,9 +17,13 @@ constexpr int stabIters1 = 5, stabIters2 = 2;
 constexpr int minMeasurementTimeDiff = 15;
 constexpr int minDelta = 56;
 
+int adcValues[totalIters];
+
 const int adcPin = 28, cameraPin = 0; // Voltage pin = A2=D2, cameraPin = D6
 const int pixelPwrPin = 11, pixelPin = 12;
 const int adcOffset = 26;
+
+
 
 class NeoPixel {
 private:
@@ -39,8 +45,6 @@ public:
 
     void write(uint8_t r, uint8_t g, uint8_t b) {
         uint32_t grb_ = ((uint32_t) r << 16) | ((uint32_t) g << 24) | ((uint32_t) b << 8);
-        std::cout << r << " " << g << " " << b << std::endl;
-        std::cout << grb_ << std::endl;
         pio_sm_put_blocking(pio0, 0, grb_);
     }
 };
@@ -61,6 +65,26 @@ public:
     }
 };
 
+struct Counts {
+    int successes = 0;
+    int fails = 0;
+    static constexpr int addr = 256 * 1024; // Multiple of 4096
+
+    void read() {
+        successes = * (const int *) (XIP_BASE + addr);
+        fails = * (const int *) (XIP_BASE + addr + 4);
+    }
+
+    void write() {
+        int data[FLASH_PAGE_SIZE/4];
+        data[0] = successes;
+        data[1] = fails;
+
+        flash_range_erase(addr, FLASH_SECTOR_SIZE);
+        flash_range_program(addr, (uint8_t *) data, FLASH_PAGE_SIZE);
+    }
+};
+
 
 struct Step {
     int iter = 0;
@@ -68,14 +92,14 @@ struct Step {
 };
 
 void reset() {
-    std::cout << "Switching camera off" << std::endl;
+    printf("Switching camera off\n");
     gpio_put(cameraPin, false);
     sleep_ms(10000);
-    std::cout << "Switching camera on" << std::endl;
+    printf("Switching camera on\n");
     gpio_put(cameraPin, true);
 }
 
-Step findMaxStep(const std::vector<int> &adcValues, int startIter, int stabIters) {
+Step findMaxStep(int startIter, int stabIters) {
     Step best;
     for (int i = startIter; i < totalIters - stabIters; ++i) {
         int delta = adcValues[i + stabIters] - adcValues[i];
@@ -87,22 +111,23 @@ Step findMaxStep(const std::vector<int> &adcValues, int startIter, int stabIters
     return best;
 }
 
-bool isCameraRunning(const std::vector<int> &adcValues) {
-    Step s1 = findMaxStep(adcValues, 0, stabIters1);
-    std::cout << "1. step: iter: " << s1.iter << "\t delta: " << s1.delta << std::endl;
-    Step s2 = findMaxStep(adcValues, s1.iter + minMeasurementTimeDiff, stabIters2);
-    std::cout << "2. step: iter: " << s2.iter << "\t delta: " << s2.delta << std::endl;
+bool isCameraRunning() {
+    Step s1 = findMaxStep(0, stabIters1);
+    printf("1. step: iter: %d,\t delta: %d\n", s1.iter, s1.delta);
+    Step s2 = findMaxStep(s1.iter + minMeasurementTimeDiff, stabIters2);
+    printf("2. step: iter: %d,\t delta: %d\n", s2.iter, s2.delta);
     if (s2.delta < -minDelta) {
-        std::cout << "Camera success" << std::endl;
+        printf("Camera success\n");
         return true;
     }
-    std::cout << "Camera fail" << std::endl;
+    printf("Camera fail\n");
     return false;
 }
 
 void init() {
     stdio_init_all();
-    std::cout << "Starting microcontroller" << std::endl;
+    sleep_ms(1200);
+    printf("\n\nStarting microcontroller\n");
 
     adc_init();
     adc_select_input(adcPin - adcOffset);
@@ -113,30 +138,48 @@ void init() {
 }
 
 bool experimentCameraRunning() {
-    std::vector<int> adcValues; // Sensor value range: 0-4095 (0-3.3V)
     for (int i = 0; i < totalIters; ++i) {
         int adcValue = adc_read();
-        adcValues.push_back(adcValue);
+        adcValues[i] = adcValue;
         sleep_ms(sleepLength);
-        std::cout << "ADC value: " << adcValue << std::endl;
+        printf("ADC value: %d         (iteration %d)\n", adcValue, i);
     }
-    return isCameraRunning(adcValues);
+    return isCameraRunning();
+}
+
+void loop() {
+    while(true) {
+    }
 }
 
 int main() {
     init();
     Indicator indicator(pio0);
 
+    if(resetCounts) {
+        Counts counts;
+        counts.write();
+        printf("Resetting success/fail counts\n");
+        loop();
+    }
+
+    Counts counts;
+    counts.read();
+    printf("successes: %d  fails: %d\n", counts.successes, counts.fails);
+
     while(! experimentCameraRunning()) {
-        std::cout << "Camera start failed: resetting" << std::endl;
+        printf("Camera start failed: resetting\n");
         indicator.fail();
         reset();
         indicator.clear();
+        ++counts.fails;
+        counts.write();
     }
 
-    std::cout << "Camera start successful: looping forever" << std::endl;
-    while (true)
-        sleep_ms(10000);
+    printf("Camera start successful: looping forever\n");
+    ++counts.successes;
+    counts.write();
 
+    loop();
     return 0;
 }
