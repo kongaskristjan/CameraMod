@@ -5,6 +5,9 @@
 #include "pico/binary_info.h"
 #include "hardware/gpio.h"
 #include "hardware/adc.h"
+#include "hardware/pio.h"
+#include "hardware/clocks.h"
+#include "ws2812.pio.h"
 
 constexpr int sleepLength = 50; // ms
 constexpr int totalIters = 15 /* seconds */ * (1000 /* ms per s */ / sleepLength);
@@ -12,8 +15,52 @@ constexpr int stabIters1 = 5, stabIters2 = 2;
 constexpr int minMeasurementTimeDiff = 15;
 constexpr int minDelta = 56;
 
-const int adcPin = 28, cameraPin = 0; // Voltage pin = A2=D2=P28, cameraPin = D6=P0
+const int adcPin = 28, cameraPin = 0; // Voltage pin = A2=D2, cameraPin = D6
+const int pixelPwrPin = 11, pixelPin = 12;
 const int adcOffset = 26;
+
+class NeoPixel {
+private:
+    pio_hw_t *pio;
+    uint offset;
+
+public:
+    explicit NeoPixel(pio_hw_t *pio): pio(pio) {
+        gpio_set_dir(pixelPwrPin, GPIO_OUT);
+        gpio_put(pixelPwrPin, true);
+        offset = pio_add_program(pio, &ws2812_program);
+        ws2812_program_init(pio, 0, offset, pixelPin, 800000, true);
+    }
+
+    ~NeoPixel() {
+        gpio_put(pixelPwrPin, false);
+        pio_remove_program(pio, &ws2812_program, offset);
+    }
+
+    void write(uint8_t r, uint8_t g, uint8_t b) {
+        uint32_t grb_ = ((uint32_t) r << 16) | ((uint32_t) g << 24) | ((uint32_t) b << 8);
+        std::cout << r << " " << g << " " << b << std::endl;
+        std::cout << grb_ << std::endl;
+        pio_sm_put_blocking(pio0, 0, grb_);
+    }
+};
+
+class Indicator {
+private:
+    NeoPixel neo;
+public:
+    Indicator(pio_hw_t *pio): neo(pio) {
+    }
+
+    void clear() {
+        neo.write(0, 0, 0);
+    }
+
+    void fail() {
+        neo.write(20, 0, 0);
+    }
+};
+
 
 struct Step {
     int iter = 0;
@@ -62,6 +109,7 @@ void init() {
     gpio_init(cameraPin);
     gpio_set_dir(cameraPin, GPIO_OUT);
     gpio_put(cameraPin, true);
+    gpio_init(pixelPwrPin);
 }
 
 bool experimentCameraRunning() {
@@ -77,10 +125,13 @@ bool experimentCameraRunning() {
 
 int main() {
     init();
+    Indicator indicator(pio0);
 
     while(! experimentCameraRunning()) {
         std::cout << "Camera start failed: resetting" << std::endl;
+        indicator.fail();
         reset();
+        indicator.clear();
     }
 
     std::cout << "Camera start successful: looping forever" << std::endl;
